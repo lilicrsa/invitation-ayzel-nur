@@ -190,18 +190,24 @@
   const musicBtn = document.getElementById('music-toggle');
   let musicUrl = null, musicPlaying = false;
   function updateBtn(){ musicBtn.textContent = musicPlaying ? '♫' : '♪'; musicBtn.style.opacity = musicPlaying ? '1' : '.75'; }
+  let userPaused = false;
   function startMusic(){
     if(!musicUrl) return;
     if(bgm.dataset.src !== musicUrl){ bgm.src = musicUrl; bgm.dataset.src = musicUrl; }
     bgm.loop = true; bgm.muted = false; bgm.volume = 0.7;
     video.muted = true;
-    bgm.play().then(()=>{ musicPlaying = true; updateBtn(); }).catch(()=>{});
+    bgm.play().then(()=>{ musicPlaying = true; userPaused = false; updateBtn(); })
+      .catch(()=>{ musicPlaying = false; updateBtn(); });   // blocked by the browser: retried at the next tap
   }
+  // if the browser blocked the music, retry at the guest's next tap
+  ['pointerdown','touchend','click'].forEach(ev => document.addEventListener(ev, ()=>{
+    if(musicUrl && started && !musicPlaying && !userPaused) startMusic();
+  }, {passive:true}));
   window.onMusicReady = function(url){ musicUrl = url; musicBtn.style.display = 'flex'; if(started) startMusic(); };
   musicBtn.addEventListener('click', function(){
     if(!musicUrl) return;
     if(bgm.paused || bgm.dataset.src !== musicUrl){ startMusic(); }
-    else { bgm.pause(); musicPlaying = false; updateBtn(); }
+    else { bgm.pause(); musicPlaying = false; userPaused = true; updateBtn(); }
   });
   document.addEventListener('visibilitychange', ()=>{
     if(document.hidden){ if(musicPlaying) bgm.pause(); }
@@ -228,7 +234,7 @@
     const f = document.createElement('form');
     f.innerHTML = `
       <label for="r-name">Nom et prénom</label>
-      <input type="text" id="r-name" maxlength="100" required autocomplete="name">
+      <input type="text" id="r-name" maxlength="100" required autocomplete="name" placeholder="Prénom Nom">
       <label>Serez-vous présent(e) ?</label>
       <div class="choice">
         <label><input type="radio" name="att" value="yes" checked><span>Oui, avec joie 🎉</span></label>
@@ -236,7 +242,7 @@
       </div>
       <div id="r-count-wrap">
         <label for="r-count">Nombre de personnes</label>
-        <input type="number" id="r-count" min="1" max="20" value="1">
+        <input type="number" id="r-count" min="1" max="20" inputmode="numeric" required placeholder="Ex. 2">
       </div>
       <label for="r-all">Allergies / remarques (facultatif)</label>
       <input type="text" id="r-all" maxlength="300">
@@ -248,14 +254,21 @@
     f.addEventListener('change', ()=>{
       const yes = f.att.value==='yes';
       f.querySelector('#r-count-wrap').style.display = yes ? '' : 'none';
+      f.querySelector('#r-count').required = yes;
     });
+    f.noValidate = true;   // we show our own friendly messages
     f.addEventListener('submit', async (e)=>{
       e.preventDefault();
-      const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Envoi…';
       f.querySelectorAll('.err').forEach(x=>x.remove());
       const yes = f.att.value==='yes';
-      const body = { invitation_id: inv.id, guest_name: f.querySelector('#r-name').value.trim(), attending: yes,
-        guests_count: yes ? Math.max(1, parseInt(f.querySelector('#r-count').value,10)||1) : 0,
+      const nameVal = f.querySelector('#r-name').value.trim().replace(/\s+/g,' ');
+      const countVal = parseInt(f.querySelector('#r-count').value,10);
+      function fail(msg, field){ f.appendChild(el('div','err',msg)); if(field) field.focus(); }
+      if(nameVal.split(' ').filter(Boolean).length < 2){ return fail('Merci d\'indiquer votre nom et votre prénom.', f.querySelector('#r-name')); }
+      if(yes && !(countVal >= 1 && countVal <= 20)){ return fail('Merci d\'indiquer le nombre de personnes (entre 1 et 20).', f.querySelector('#r-count')); }
+      const btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Envoi…';
+      const body = { invitation_id: inv.id, guest_name: nameVal, attending: yes,
+        guests_count: yes ? countVal : 0,
         allergies: f.querySelector('#r-all').value.trim() || null, message: f.querySelector('#r-msg').value.trim() || null };
       try{
         const res = await fetch(SUPABASE_URL+'/rest/v1/rsvp_responses', { method:'POST',
