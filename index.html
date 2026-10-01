@@ -105,7 +105,9 @@
   .confirm-when{ margin-top:.6rem; font-weight:600; color:#4E3347;}
   .confirm-fun{ margin-top:.8rem; font-weight:800; color:#D9568A;}
   .rsvp .done{ text-align:center; font-weight:700; color:#D9568A; padding:1rem 0;}
-  .rsvp .err{ text-align:center; font-weight:600; color:#B3261E; margin-top:.7rem;}
+  .rsvp .err{ font-weight:700; font-size:.85rem; color:#B3261E; background:#FDECEF; border-radius:10px;
+    padding:.35rem .7rem; margin-top:.4rem; text-align:left;}
+  .rsvp input.invalid{ border-color:#D32F4F; box-shadow:0 0 0 3px rgba(211,47,79,.18);}
   .status{ color:#8E5C84; font-weight:600; padding:1rem 0;}
 
   #music-toggle{ position:fixed; top:1.1rem; right:1.1rem; z-index:20; width:42px; height:42px; border-radius:50%;
@@ -257,15 +259,28 @@
       f.querySelector('#r-count').required = yes;
     });
     f.noValidate = true;   // we show our own friendly messages
+    f.addEventListener('input', (ev)=>{ ev.target.classList.remove('invalid'); const n = ev.target.nextElementSibling; if(n && n.classList.contains('err')) n.remove(); });
     f.addEventListener('submit', async (e)=>{
       e.preventDefault();
       f.querySelectorAll('.err').forEach(x=>x.remove());
       const yes = f.att.value==='yes';
       const nameVal = f.querySelector('#r-name').value.trim().replace(/\s+/g,' ');
       const countVal = parseInt(f.querySelector('#r-count').value,10);
-      function fail(msg, field){ f.appendChild(el('div','err',msg)); if(field) field.focus(); }
-      if(nameVal.split(' ').filter(Boolean).length < 2){ return fail('Merci d\'indiquer votre nom et votre prénom.', f.querySelector('#r-name')); }
-      if(yes && !(countVal >= 1 && countVal <= 20)){ return fail('Merci d\'indiquer le nombre de personnes (entre 1 et 20).', f.querySelector('#r-count')); }
+      function showError(field, msg){
+        const m = el('div','err',msg);
+        field.insertAdjacentElement('afterend', m);                     // right under that field
+        field.classList.add('invalid');
+        return m;
+      }
+      const problems = [];
+      if(nameVal.split(' ').filter(Boolean).length < 2) problems.push(showError(f.querySelector('#r-name'), "Merci d'indiquer votre nom et votre prénom."));
+      if(yes && !(countVal >= 1 && countVal <= 20)) problems.push(showError(f.querySelector('#r-count'), "Merci d'indiquer le nombre de personnes (entre 1 et 20)."));
+      if(problems.length){
+        const first = problems[0].previousElementSibling;
+        first.focus({preventScroll:true});
+        problems[0].scrollIntoView({behavior:'smooth', block:'center'});
+        return;
+      }
       const btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Envoi…';
       const body = { invitation_id: inv.id, guest_name: nameVal, attending: yes,
         guests_count: yes ? countVal : 0,
@@ -288,7 +303,7 @@
         wrap.appendChild(ok);
       }catch(err){
         btn.disabled=false; btn.textContent='Envoyer ma réponse';
-        f.appendChild(el('div','err','Oups, l\'envoi a échoué. Réessayez dans un instant.'));
+        f.insertBefore(el('div','err','Oups, l\'envoi a échoué. Réessayez dans un instant.'), btn);
       }
     });
     return wrap;
