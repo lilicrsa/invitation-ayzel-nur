@@ -72,6 +72,8 @@
   .info-row .k{ font-size:.68rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:#C0719A;}
   .info-row .v{ font-weight:600; font-size:1.05rem; color:#4E3347; word-break:break-word;}
   .info-row a{ color:inherit; text-decoration:underline; text-decoration-color:#F48FB1;}
+  .info-row .nav-links{ display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem;}
+  .info-row .nav-links a{ font-size:.78rem; font-weight:700; text-decoration:none; color:#fff; background:#D9568A; border-radius:999px; padding:.3rem .85rem;}
   .info-message{ margin-top:1.2rem; font-weight:500; line-height:1.5; color:#5A3D52;}
   .prog{ margin-top:1.4rem; text-align:left;}
   .prog h3{ font-weight:800; font-size:1rem; color:#D9568A; text-align:center; margin-bottom:.6rem;}
@@ -279,6 +281,23 @@
     return wrap;
   }
 
+
+  // ---- Navigation buttons: open the user's own navigation app ----
+  function buildNavLinks(inv, label){
+    const box = el('div','nav-links');
+    const q = encodeURIComponent(inv.address || label);
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+    const isAndroid = /Android/.test(ua);
+    function add(text, href){ const a = el('a', null, text); a.href = href; a.target = '_blank'; a.rel = 'noopener'; box.appendChild(a); }
+    if(!inv.address && inv.maps_url){ add('Itinéraire', inv.maps_url); return box; }
+    add('Google Maps', 'https://www.google.com/maps/dir/?api=1&destination=' + q);
+    add('Waze', 'https://waze.com/ul?q=' + q + '&navigate=yes');
+    if(isIOS) add('Plans', 'https://maps.apple.com/?daddr=' + q);
+    if(isAndroid) add('Autre appli', 'geo:0,0?q=' + q);
+    return box;
+  }
+
   async function loadInfos(){
     const box = document.getElementById('info-card');
     try{
@@ -306,7 +325,8 @@
       if(inv.venue_name || inv.address){
         const wrap = document.createElement('span');
         const label = [inv.venue_name, inv.address].filter(Boolean).join(' — ');
-        wrap.appendChild(inv.maps_url ? link(inv.maps_url, label) : document.createTextNode(label));
+        wrap.appendChild(document.createTextNode(label));
+        wrap.appendChild(buildNavLinks(inv, label));
         rows.appendChild(row('📍','Lieu', wrap));
       }
       if(inv.contact_name || inv.contact_phone){
