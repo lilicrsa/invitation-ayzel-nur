@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Réponses des invités</title>
+<style>
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:#FBF3F7; color:#4E3347; min-height:100vh; padding:1.2rem;}
+  .wrap{ max-width:900px; margin:0 auto;}
+  h1{ font-size:1.5rem; color:#D9568A; margin-bottom:1rem;}
+  .card{ background:#fff; border-radius:18px; padding:1.3rem; box-shadow:0 6px 24px rgba(217,86,138,.12); margin-bottom:1rem;}
+  label{ display:block; font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#C0719A; margin:.8rem 0 .3rem;}
+  input, select{ width:100%; font-size:1rem; padding:.65rem .8rem; border:1.5px solid #E7C4D5; border-radius:12px; background:#fff; color:#4E3347;}
+  button{ font-size:1rem; font-weight:700; color:#fff; background:#D9568A; border:none; border-radius:999px; padding:.7rem 1.4rem; cursor:pointer;}
+  button.secondary{ background:#fff; color:#D9568A; border:1.5px solid #D9568A;}
+  .row{ display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; justify-content:space-between;}
+  .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; margin:1rem 0;}
+  .stat{ background:#FFF0F6; border-radius:14px; padding:.9rem; text-align:center;}
+  .stat b{ display:block; font-size:1.8rem; color:#D9568A;}
+  .stat span{ font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:#8E5C84;}
+  .tablewrap{ overflow-x:auto;}
+  table{ width:100%; border-collapse:collapse; font-size:.95rem;}
+  th, td{ text-align:left; padding:.6rem .5rem; border-bottom:1px solid #F1DCE6; vertical-align:top;}
+  th{ font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:#C0719A;}
+  .yes{ color:#1B7F4B; font-weight:700;} .no{ color:#B3261E; font-weight:700;}
+  .err{ color:#B3261E; font-weight:600; margin-top:.7rem;}
+  .hidden{ display:none;}
+  .muted{ color:#8E5C84; font-size:.9rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Réponses des invités</h1>
+
+  <!-- LOGIN -->
+  <div class="card" id="login">
+    <p class="muted">Page réservée aux organisateurs.</p>
+    <form id="login-form">
+      <label for="email">E-mail</label>
+      <input type="email" id="email" required autocomplete="username">
+      <label for="pwd">Mot de passe</label>
+      <input type="password" id="pwd" required autocomplete="current-password">
+      <div style="margin-top:1rem"><button type="submit">Se connecter</button></div>
+      <div class="err hidden" id="login-err"></div>
+    </form>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dash" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div style="flex:1; min-width:200px;">
+          <label for="inv-select" style="margin-top:0">Invitation</label>
+          <select id="inv-select"></select>
+        </div>
+        <div style="display:flex; gap:.5rem;">
+          <button class="secondary" id="refresh">Actualiser</button>
+          <button class="secondary" id="csv">Exporter CSV</button>
+          <button class="secondary" id="logout">Déconnexion</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="s-yes">0</b><span>Présents (réponses)</span></div>
+        <div class="stat"><b id="s-people">0</b><span>Personnes attendues</span></div>
+        <div class="stat"><b id="s-no">0</b><span>Absents</span></div>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Date</th><th>Nom</th><th>Présence</th><th>Pers.</th><th>Allergies / remarques</th><th>Message</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="muted hidden" id="empty" style="margin-top:.8rem">Aucune réponse pour le moment.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://sgatagagyfizuyrinmth.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_YdlXEbQn9ZqILsjT6pyAug_ijgzm5fQ';
+  const $ = id => document.getElementById(id);
+  let token = sessionStorage.getItem('sb_token');
+  let all = [];
+
+  function hdr(){ return { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token }; }
+  function td(text, cls){ const c = document.createElement('td'); c.textContent = text == null ? '' : text; if(cls) c.className = cls; return c; }
+
+  async function login(email, password){
+    const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST', headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }) });
+    const data = await res.json();
+    if(!res.ok || !data.access_token) throw new Error('Identifiants incorrects.');
+    token = data.access_token; sessionStorage.setItem('sb_token', token);
+  }
+
+  async function loadData(){
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rsvp_responses?select=*,invitations(title,slug)&order=created_at.desc', { headers: hdr() });
+    if(res.status === 401 || res.status === 403){ logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+    if(!res.ok) throw new Error('Chargement impossible.');
+    all = await res.json();
+    const sel = $('inv-select'); const current = sel.value;
+    const map = new Map(); all.forEach(r => { if(r.invitations) map.set(r.invitation_id, r.invitations.title); });
+    sel.textContent = '';
+    const optAll = document.createElement('option'); optAll.value = ''; optAll.textContent = 'Toutes les invitations'; sel.appendChild(optAll);
+    map.forEach((title, id) => { const o = document.createElement('option'); o.value = id; o.textContent = title; sel.appendChild(o); });
+    sel.value = current;
+    render();
+  }
+
+  function current(){ const id = $('inv-select').value; return id ? all.filter(r => r.invitation_id === id) : all; }
+
+  function render(){
+    const list = current();
+    const yes = list.filter(r => r.attending);
+    $('s-yes').textContent = yes.length;
+    $('s-people').textContent = yes.reduce((n, r) => n + (r.guests_count || 0), 0);
+    $('s-no').textContent = list.length - yes.length;
+    const tb = $('rows'); tb.textContent = '';
+    list.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.appendChild(td(new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })));
+      tr.appendChild(td(r.guest_name));
+      tr.appendChild(td(r.attending ? 'Présent' : 'Absent', r.attending ? 'yes' : 'no'));
+      tr.appendChild(td(r.attending ? r.guests_count : ''));
+      tr.appendChild(td(r.allergies)); tr.appendChild(td(r.message));
+      tb.appendChild(tr);
+    });
+    $('empty').classList.toggle('hidden', list.length > 0);
+  }
+
+  function csvCell(v){ let s = v == null ? '' : String(v); if(/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }
+  function exportCsv(){
+    const head = ['Date','Invitation','Nom','Présence','Personnes','Allergies / remarques','Message'];
+    const lines = [head.map(csvCell).join(';')];
+    current().forEach(r => lines.push([r.created_at, r.invitations && r.invitations.title, r.guest_name, r.attending ? 'Présent' : 'Absent', r.guests_count, r.allergies, r.message].map(csvCell).join(';')));
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'reponses-invites.csv'; a.click();
+  }
+
+  function show(loggedIn){ $('login').classList.toggle('hidden', loggedIn); $('dash').classList.toggle('hidden', !loggedIn); }
+  function logout(){ token = null; sessionStorage.removeItem('sb_token'); show(false); }
+
+  $('login-form').addEventListener('submit', async e => {
+    e.preventDefault(); $('login-err').classList.add('hidden');
+    try{ await login($('email').value.trim(), $('pwd').value); await loadData(); show(true); $('pwd').value = ''; }
+    catch(err){ $('login-err').textContent = err.message; $('login-err').classList.remove('hidden'); }
+  });
+  $('inv-select').addEventListener('change', render);
+  $('refresh').addEventListener('click', () => loadData().catch(err => alert(err.message)));
+  $('csv').addEventListener('click', exportCsv);
+  $('logout').addEventListener('click', logout);
+
+  if(token){ loadData().then(() => show(true)).catch(() => show(false)); }
+</script>
+</body>
+</html>
