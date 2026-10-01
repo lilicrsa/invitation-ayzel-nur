@@ -127,7 +127,8 @@
   </div>
 </div>
 
-<button id="music-toggle" title="Musique">♪</button>
+<button id="music-toggle" title="Musique" style="display:none">♪</button>
+<audio id="bg-music" preload="auto"></audio>
 
 <!-- ============ APP: card only ============ -->
 <div id="app">
@@ -165,23 +166,44 @@
     introEl.classList.add('hidden');
     appEl.classList.add('show');
   }
+  const bgm = document.getElementById('bg-music');
+  bgm.loop = true;
   let started = false;
   function startWithSound(){
     if(started) return;
     started = true;
     document.getElementById('intro-overlay').style.display = 'none';
-    video.muted = false;
+    bgm.play().catch(()=>{});          // silent unlock inside the tap (needed by phones)
+    video.muted = !!musicUrl;          // custom music replaces the video's own sound
     video.currentTime = 0;
     video.play().catch(()=>{ enterSite(); });
+    if(musicUrl) startMusic();
   }
   video.addEventListener('ended', enterSite);
   enterBtn.addEventListener('click', startWithSound);
 
-  let musicOn = false;
-  document.getElementById('music-toggle').addEventListener('click', function(){
-    musicOn = !musicOn;
-    this.textContent = musicOn ? '♫' : '♪';
-    this.style.opacity = musicOn ? '1' : '0.75';
+  // ---- Background music (chosen per invitation in Supabase) ----
+  const SILENT = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  bgm.src = SILENT; bgm.dataset.src = 'silent';
+  const musicBtn = document.getElementById('music-toggle');
+  let musicUrl = null, musicPlaying = false;
+  function updateBtn(){ musicBtn.textContent = musicPlaying ? '♫' : '♪'; musicBtn.style.opacity = musicPlaying ? '1' : '.75'; }
+  function startMusic(){
+    if(!musicUrl) return;
+    if(bgm.dataset.src !== musicUrl){ bgm.src = musicUrl; bgm.dataset.src = musicUrl; }
+    bgm.loop = true; bgm.muted = false; bgm.volume = 0.7;
+    video.muted = true;
+    bgm.play().then(()=>{ musicPlaying = true; updateBtn(); }).catch(()=>{});
+  }
+  window.onMusicReady = function(url){ musicUrl = url; musicBtn.style.display = 'flex'; if(started) startMusic(); };
+  musicBtn.addEventListener('click', function(){
+    if(!musicUrl) return;
+    if(bgm.paused || bgm.dataset.src !== musicUrl){ startMusic(); }
+    else { bgm.pause(); musicPlaying = false; updateBtn(); }
+  });
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){ if(musicPlaying) bgm.pause(); }
+    else if(musicPlaying){ bgm.play().catch(()=>{}); }
   });
 
   // ---- Supabase: load invitation infos ----
@@ -261,13 +283,14 @@
     const box = document.getElementById('info-card');
     try{
       const url = SUPABASE_URL + '/rest/v1/invitations?slug=eq.' + encodeURIComponent(slug)
-        + '&is_published=eq.true&select=*,invitation_programme(*)';
+        + '&is_published=eq.true&select=*,invitation_programme(*),music_tracks(url,title)';
       const res = await fetch(url, { headers: { apikey: SUPABASE_KEY } });
       if(!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
       box.textContent = '';
       if(!data.length){ box.appendChild(el('div','status','Invitation introuvable.')); return; }
       const inv = data[0];
+      if(inv.music_tracks && inv.music_tracks.url) window.onMusicReady(inv.music_tracks.url);
 
       box.appendChild(el('h2', null, inv.title));
       if(inv.host_names) box.appendChild(el('div','host', inv.host_names));
