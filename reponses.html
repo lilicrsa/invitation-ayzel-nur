@@ -26,6 +26,29 @@
   th{ font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:#C0719A;}
   .yes{ color:#1B7F4B; font-weight:700;} .no{ color:#B3261E; font-weight:700;}
   .err{ color:#B3261E; font-weight:600; margin-top:.7rem;}
+
+  .tablewrap td{ word-break:break-word; overflow-wrap:anywhere;}
+  .btns{ display:flex; gap:.5rem; flex-wrap:wrap;}
+  @media (max-width: 680px){
+    body{ padding:.8rem;}
+    h1{ font-size:1.3rem;}
+    .card{ padding:1rem; border-radius:16px;}
+    .row{ flex-direction:column; align-items:stretch;}
+    .btns{ width:100%;}
+    .btns button{ flex:1 1 auto; padding:.65rem .8rem; font-size:.92rem;}
+    .stats{ gap:.5rem;}
+    .stat{ padding:.7rem .3rem;}
+    .stat b{ font-size:1.5rem;}
+    .stat span{ font-size:.62rem; letter-spacing:.03em; display:block;}
+    /* the table becomes one card per guest */
+    table, tbody, tr, td{ display:block; width:100%;}
+    thead{ display:none;}
+    tr{ background:#FFF7FB; border:1px solid #F1DCE6; border-radius:14px; padding:.7rem .8rem; margin-bottom:.7rem;}
+    td{ border:none; padding:.25rem 0; display:flex; gap:.6rem; justify-content:space-between; text-align:right;}
+    td::before{ content:attr(data-label); flex:0 0 38%; text-align:left; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#C0719A; padding-top:.15rem;}
+    td:empty{ display:none;}
+    td.c-name{ font-weight:800; font-size:1.05rem; color:#4E3347;}
+  }
   .hidden{ display:none;}
   .muted{ color:#8E5C84; font-size:.9rem;}
 </style>
@@ -55,7 +78,7 @@
           <label for="inv-select" style="margin-top:0">Invitation</label>
           <select id="inv-select"></select>
         </div>
-        <div style="display:flex; gap:.5rem;">
+        <div class="btns">
           <button class="secondary" id="refresh">Actualiser</button>
           <button class="secondary" id="csv">Exporter CSV</button>
           <button class="secondary" id="logout">Déconnexion</button>
@@ -85,7 +108,7 @@
   let all = [];
 
   function hdr(){ return { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token }; }
-  function td(text, cls){ const c = document.createElement('td'); c.textContent = text == null ? '' : text; if(cls) c.className = cls; return c; }
+  function td(text, cls, label){ const c = document.createElement('td'); c.textContent = text == null ? '' : text; if(cls) c.className = cls; if(label) c.dataset.label = label; return c; }
 
   async function login(email, password){
     const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
@@ -121,11 +144,12 @@
     const tb = $('rows'); tb.textContent = '';
     list.forEach(r => {
       const tr = document.createElement('tr');
-      tr.appendChild(td(new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })));
-      tr.appendChild(td(r.guest_name));
-      tr.appendChild(td(r.attending ? 'Présent' : 'Absent', r.attending ? 'yes' : 'no'));
-      tr.appendChild(td(r.attending ? r.guests_count : ''));
-      tr.appendChild(td(r.allergies)); tr.appendChild(td(r.message));
+      tr.appendChild(td(new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }), 'c-date', 'Date'));
+      tr.appendChild(td(r.guest_name, 'c-name', 'Nom'));
+      tr.appendChild(td(r.attending ? 'Présent' : 'Absent', (r.attending ? 'yes' : 'no') + ' c-att', 'Présence'));
+      tr.appendChild(td(r.attending ? r.guests_count : '', 'c-count', 'Personnes'));
+      tr.appendChild(td(r.allergies, 'c-all', 'Allergies / remarques'));
+      tr.appendChild(td(r.message, 'c-msg', 'Message'));
       tb.appendChild(tr);
     });
     $('empty').classList.toggle('hidden', list.length > 0);
